@@ -22,37 +22,37 @@ import (
 	"context"
 	"strings"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/reiver/go-telnet"
+	"maunium.net/go/mautrix/id"
 )
 
 type Session struct {
-	Chat  *tgbotapi.Chat
-	Input chan *tgbotapi.Message
+	RoomID id.RoomID
+	Input chan *MatrixEvent
 }
 
-var sessions map[int64]*Session
+var sessions map[id.RoomID]*Session
 var mercHost string
 var sessionsCtx context.Context
 
 func initSessions(host string, ctx context.Context) error {
-	sessions = make(map[int64]*Session)
+	sessions = make(map[id.RoomID]*Session)
 	mercHost = host
 	sessionsCtx = ctx
 	return nil
 }
 
-func getSession(chat *tgbotapi.Chat) *Session {
-	session, ok := sessions[chat.ID]
+func getSession(chat id.RoomID) *Session {
+	session, ok := sessions[chat]
 	if !ok {
 		session = newSession(chat)
 	}
 	return session
 }
 
-func newSession(chat *tgbotapi.Chat) *Session {
-	session := Session{chat, make(chan *tgbotapi.Message)}
-	sessions[chat.ID] = &session
+func newSession(room id.RoomID) *Session {
+	session := Session{room, make(chan *MatrixEvent)}
+	sessions[room] = &session
 	startSession(&session)
 	return &session
 }
@@ -71,15 +71,24 @@ func startSession(session *Session) {
 		go func() {
 			for {
 				select {
-				case msg := <-session.Input:
-					if msg.Text != "/start" {
-						telnetInput <- strings.Trim(msg.Text, "/")
+				case evt := <-session.Input:
+					msg := evt.Event.Content.AsMessage()
+					text := msg.Body
+					if msg.NewContent != nil {
+						text = msg.NewContent.Body
+					}
+					if evt.IsDirect {
+						telnetInput <- text
+					} else {
+						if strings.HasPrefix(text, "$") {
+							telnetInput <- strings.Trim(text[1:], " ")
+						}
 					}
 				case body := <-telnetOutput:
-					sendToTelegram(session.Chat.ID, body)
+					sendToMatrix(session.RoomID, body)
 				case <-telnetError:
 					cancel()
-					delete(sessions, session.Chat.ID)
+					delete(sessions, session.RoomID)
 					return
 				case <-ctx.Done():
 					return
@@ -91,6 +100,6 @@ func startSession(session *Session) {
 	}()
 }
 
-func sendToSession(session *Session, message *tgbotapi.Message) {
+func sendToSession(session *Session, message *MatrixEvent) {
 	session.Input <- message
 }
