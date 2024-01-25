@@ -20,6 +20,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"html"
 	"log"
 	"time"
 
@@ -142,5 +143,5 @@ func formatStringForSending(raw string) string {
 	return fmt.Sprintf("```\n%s\n```", raw)
 }
 func formatStringForHTML(raw string) string {
-	return fmt.Sprintf("<pre>%s</pre>", raw)
+	return fmt.Sprintf("<pre>%s</pre>", html.EscapeString(raw))
 }
